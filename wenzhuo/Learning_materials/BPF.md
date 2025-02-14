@@ -23,4 +23,6 @@ BPF虚拟机将事先注入内核代码的那段过滤程序，
 
 放进内核解释器interpreter【在一套简单的处理器、累加器、索引寄存器、的虚拟机环境中】解码执行。
 
-而EBPF【Extended BPF】在BPF的基础上有更多的事件触发类型，具有更广泛的应用场景（BPF--更多应用于网络包过滤），功能更多。
+而EBPF【Extended BPF】在BPF的基础上有更多的事件触发类型，具有更广泛的应用场景（BPF--更多应用于网络包过滤），功能更多。  
+
+如果你想快速了解一下BPF这门技术可以看这份博客：-- [Linux超能力BPF技术介绍及学习分享博客链接](https://davidlovezoe.club/wordpress/archives/1122)
