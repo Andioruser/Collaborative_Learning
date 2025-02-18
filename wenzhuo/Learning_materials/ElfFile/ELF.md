@@ -12,5 +12,8 @@ ELF 规定了这二进制程序的组织规范，所有以这规范组织的文�
 
 ![alt text](image.png)      
 
-[资料来源-博客链接](https://www.eet-china.com/mp/a169493.html)
+
+![alt 可以在得到执行文件之后，将文件stripped,这样可以减少文件占用的磁盘空间。](image-2.png "符号表")
+
+[资料来源-博客链接](https://www.eet-china.com/mp/a169493.html)  
 
