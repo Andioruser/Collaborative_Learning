@@ -79,6 +79,52 @@ return notFound
 **加速查找**    
 
 ```go
+// 把全长的key字符比较，转换成八位的比较，如果还是相等才进行真正的compare比较运算。
+// 能在一定程度上加速比较key过程。
+func compare(score float64, key []byte, next *Element) int {
+    if score == next.score {
+        return bytes.Compare(key, next.entry.Key)
+    }
+
+    if score < next.score {
+        return -1
+    } else {
+        return 1
+    }
+}
+
+func calcScore(key []byte) (score float64) {
+    var hash uint64 
+    l := len(key)
+
+    if l > 8 {
+       l = 8
+    }
+    
+    for i := 0; i < l; i++ {
+        shift := uint(64 - 8 - i*8)
+        hash |= uint64(key[i]) << shift
+    }
+
+    score = float64(hash)
+    return
+}
+```
+
+```go
+var newNode *Node
+
+newNode.next = next
+preNode.next = newNode
+
+//----------------------------------------
+prevElem := list.header
+i := len(list.header.levels) - 1
+prevElemList []*Element
+
+for i >= 0 {
+    
+}
 
 
 ```
