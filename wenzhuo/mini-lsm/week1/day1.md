@@ -1,4 +1,11 @@
 ## Task1 :
+
+memtable -> skipmap -> skiplist 
+
+基于跳表实现的内存表    
+
+![alt text](image-1.png)
+
 使用 crossbeam-skiplist 作为 LSM 存储引擎的内存表（memtable）实现，确实有其独特的优势，特别是在并发读写方面。   
 
 你提到它只需要不可变引用来进行修改操作（如插入），这背后有几个重要的设计原理和优点：    
