@@ -34,4 +34,59 @@ crossbeam-skiplist 的设计核心是支持高效的并发读写操作，而不�
 
 **这不仅提升了性能，还简化了并发编程的复杂度，非常适合高性能的键值存储系统如 LSM 存储引擎的 memtable 实现。**       
 
-**如果你在实现 memtable 时遵循这一设计原则，不仅可以避免不必要的锁开销，还能充分利用 Rust 的并发特性，构建一个高效且线程安全的内存表结构。**    
+**如果你在实现 memtable 时遵循这一设计原则，不仅可以避免不必要的锁开销，还能充分利用 Rust 的并发特性，构建一个高效且线程安全的内存表结构。**  
+
+
+**冻结原有的内存表（取代之前的cur_mem_table），创建新内存表，更新内存表列表，并且等待持久化到磁盘【非阻塞】。** 
+
+![alt text](image.png)
+
+```rust
+// Put a key-value pair into the storage by writing into the current memtable. 
+pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> { 
+    { 
+        let guard = self.state.read(); 
+        let _ = guard.memtable.put(_key, _value); 
+        if guard.memtable.approximate_size() >= self.options.target_sst_size 
+        { 
+            let state_lock = self.state_lock.lock(); 
+            if guard.memtable.approximate_size() >= self.options.target_sst_size 
+            { 
+                self.force_freeze_memtable(&state_lock)?; 
+            } 
+        }
+    } 
+    Ok(())
+} 
+//这份代码为什么会超时
+```
+**在 put 方法中，你首先获取了 self.state 的读锁，然后在 if 条件成立时尝试获取 self.state_lock 的写锁。这可能会导致锁竞争，尤其是在高并发的情况下。如果多个线程同时到达 if 条件并尝试获取 self.state_lock，可能会导致其中一个线程长时间等待，从而引发超时。**    
+
+**这份代码教会我们，注意锁的机制，读写锁的读锁是共享的，写锁是独占的，前期读锁读到信息以后及时释放，否则会和死锁形成竞争**  
+
+**正确写法:**   
+
+```rust
+/// Put a key-value pair into the storage by writing into the current memtable.
+    pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
+        let mut needs_freeze = false;
+        {
+            let guard = self.state.read();
+            guard.memtable.put(_key, _value);
+            let memtable_size = guard.memtable.approximate_size();
+            if guard.memtable.approximate_size() >= self.options.target_sst_size {
+                needs_freeze = true;
+            }
+        }
+
+        if needs_freeze {
+            let state_lock = self.state_lock.lock();
+            self.force_freeze_memtable(&state_lock);
+        }
+
+        Ok(())
+    }
+
+``` 
+
+```
