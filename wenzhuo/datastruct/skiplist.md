@@ -123,8 +123,134 @@ i := len(list.header.levels) - 1
 prevElemList []*Element
 
 for i >= 0 {
-    
+
 }
 
 
 ```
+
+**新节点要每层插入**    
+
+![alt text](image-1.png)    
+
+```go
+var d2 *Element
+
+var prevElem []*Element
+
+prevElem[3] = ElemA
+prevElem[2] = ElemA
+prevElem[1] = Elemc
+prevElem[0] = ElemD
+
+//node.next
+d2.levels[3] = prevElem[3].levels[3]
+de.levels[2] = prevElem[2].levels[2]
+d2.levels[1] = prevElem[1].levels[1]
+d2.levels[0] = prevElem[0].levels[0]
+//d2.levels[i] = prevElem[i].levels[i]
+
+//prevNode.next
+prevElem[3].levels[3] = d2
+prevElem[2].levels[2] = d2
+prevElem[1].levels[1] = d2
+prevElem[0].levels[0] = d2
+
+//prevElem[i][i] = d2
+```
+
+**新节点要插入多少层，概率函数实现**    
+
+```go
+func randlevel() int {
+    i := 1
+    for ; i < list.maxlevel; i++ {
+        if Rand(2) == 0 {
+            return i
+        }
+    }
+    return i
+}
+
+```
+
+**结合起来实现插入操作**    
+
+```go 
+func (list *SkipList) Add(data *codec.Entry) error {
+    score := list.calcScore(data.key)
+    var elem *Element
+
+    max := len(list.header.levels)
+    prevElem := list.header
+
+    var prevElemHeader [defaultMaxlevel]*Element
+
+    for i := max - 1; i >= 0; {
+        //keep visit path here
+        prevElemHeader[i] = prevElem
+
+        for next := prevElem.levels[i]; next != nil; next = prevElem.levels[i] {
+            if comp := list.compare(score, data.Key, next); comp <=0 {
+                if comp == 0{
+                    elem = next
+                    elem.entry = data
+                    return nil
+                }
+                // find the insert position
+                break
+            }
+            // just like linked-list next
+            prevElem = next
+            prevElemHeaders[i] = prevElem
+        }
+    }
+
+    level := list.randLevel()
+
+    elem = newElement(score, data, level)
+    // to add elem to the skiplist
+    for i := 0; i < level; i++ {
+        elem.levels[i] = prevElemHeaders[i].levels[i]
+        prevElemHeaders[i].levels[i] = elem
+    }
+    return nil
+}
+
+```
+
+**查找操作**    
+
+```go
+func (list *SkipList)Search(key []byte) (e *codec.Entry) {
+    if list.length == 0 {
+        return nil
+    }
+
+    score := list.calcScore(key)
+
+    prevElem := list.header
+    i := len(list.header.levels) - 1
+
+    for i >= 0 {
+        for next := prevElem.levels[i]; next != nil; next = prevElem.levels[i] {
+            if comp := list.compare(score, key, next); comp <= 0 {
+                if comp == 0 {
+                    return next.Entry()
+                }
+                break
+            }
+
+            prevElem = next
+        }
+    }
+    return 
+}
+
+```
+
+待完成 --   
+
+![alt text](image-2.png)
+
+
