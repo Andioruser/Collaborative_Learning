@@ -54,6 +54,62 @@ fn main() {
 }
 ```
 
+项目实例代码：  
+
+```rust
+
+ /// Get an iterator over a range of keys.
+    pub fn scan(&self, _lower: Bound<&[u8]>, _upper: Bound<&[u8]>) -> MemTableIterator {
+        let (lower, upper) = (map_bound(_lower), map_bound(_upper));
+        let mut iterator = MemTableIteratorBuilder {
+            map: self.map.clone(),
+            iter_builder: |map| map.range((lower, upper)),
+            item: (Bytes::new(), Bytes::new()),
+        }
+        .build();
+        iterator.next().unwrap();
+        iterator
+    }
+
+#[self_referencing]
+pub struct MemTableIterator {
+    /// Stores a reference to the skipmap.
+    map: Arc<SkipMap<Bytes, Bytes>>,
+    /// Stores a skipmap iterator that refers to the lifetime of `MemTableIterator` itself.
+    #[borrows(map)]
+    #[not_covariant]
+    iter: SkipMapRangeIter<'this>,
+    /// Stores the current key-value pair.
+    item: (Bytes, Bytes),
+}
+
+fn value(&self) -> &[u8] {
+        &self.borrow_item().1[..]
+    }
+
+    fn key(&self) -> KeySlice {
+        KeySlice::from_slice(&self.borrow_item().0[..])
+    }
+
+    fn is_valid(&self) -> bool {
+        !self.borrow_item().0.is_empty()
+    }
+
+    fn next(&mut self) -> Result<()> {
+        let entry = self.with_iter_mut(|iter| {
+            let entry = iter.next();
+            match entry {
+                None => (Bytes::new(), Bytes::new()),
+                Some(entry) => (entry.key().clone(), entry.value().clone()),
+            }
+        });
+        self.with_item_mut(|item| {
+            *item = entry;
+        });
+        Ok(())
+    }
+```
+
 [ouroboros::self_referencing库链接](https://docs.rs/ouroboros/latest/ouroboros/attr.self_referencing.html#you-must-comply-with-these-limitations)   
 
 ## 范围边界，迭代范围   
@@ -76,6 +132,7 @@ for (key, value) in map.range((Excluded(3), Included(8))) {
     println!("{key}: {value}");
 }
 
-assert_eq!(Some((&3, &"a")), map.range((Unbounded, Included(5))).next());
+assert_eq!(Some((&3, &"a")), map.range((Unbounded, Included(5))).next());   
+
 ```
 [std::ops::Bound](https://doc.rust-lang.org/beta/std/ops/enum.Bound.html)
