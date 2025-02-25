@@ -41,3 +41,123 @@ google-chrome-stable
 ├── allocator 内存分配器    
 ├── easycapture-ebpf ebpf 库    
 └── easycapture 主程序  
+
+easycapture-ebpf    
+
+**这段代码是一个基于Rust的异步程序，主要用于通过eBPF技术监控OpenSSL的TLS连接，捕获关键加密参数。以下是对代码的逐步解析**    
+
+1. 程序初始化
+```rust
+async fn main() -> ExitCode {
+    // 设置日志级别（DEBUG/INFO）
+    let level = if env::var("EASYCAPTURE_DEBUG").is_ok() {
+        Level::DEBUG
+    } else {
+        Level::INFO
+    };
+    // 初始化tracing日志订阅者
+    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+    env_logger::init();
+    //................
+}
+```
+日志配置：根据环境变量EASYCAPTURE_DEBUG设置日志级别，使用tracing和env_logger进行日志记录。  
+
+2.  资源清理    
+
+```rust
+defer! {
+        if Path::new("/sys/fs/bpf/cloudwalker").exists() {
+            _ = std::fs::remove_dir_all("/sys/fs/bpf/cloudwalker");
+        }
+    }
+``` 
+defer宏：程序退出时自动清理eBPF挂载目录/sys/fs/bpf/cloudwalker，确保资源释放。  
+
+3.  Openssl检测 
+
+```rust
+let path = check_openssl().context("failed to get openssl").unwrap();
+    info!(path = ?path.display(), "found openssl");
+    let version = detect_openssl_version(&path)
+        .context("failed to detect openssl version")
+        .unwrap();
+    info!(version, "detected openssl version");
+``` 
+
+路径检测：调用check_openssl查找系统OpenSSL路径。    
+
+版本检测：通过detect_openssl_version获取版本号，并记录日志。        
+
+4. 配置eBPF探针 
+
+```rust
+let opt = UprobeOpt {
+        func_name: PROBE_OPENSSL_FN.map(ToOwned::to_owned).collect(),
+        binary_path: vec![path.to_str().unwrap().to_string()],
+    };
+    let opt_map: HashMap<String, UprobeOpt> = [("openssl".to_string(), opt)].into();
+    let version = version.strip_prefix("openssl ").unwrap();
+``` 
+
+Uprobe配置：设置要探测的OpenSSL函数名（如SSL_write/SSL_read）和二进制路径。 
+
+版本处理：去除版本字符串前缀，得到纯版本号（如1.1.1k）。    
+
+5. 动态加载eBPF程序 
+
+```rust
+let bpf = match version {
+        o102 if o102.starts_with("1.0.2") => load_openssl102a_ebpf(opt_map).unwrap(),
+        o110 if o110.starts_with("1.1.0") => load_openssl110a_ebpf(opt_map).unwrap(),
+        o111x if o111x.starts_with("1.1.1") => { /* 处理子版本 */ },
+        o30x if o30x.starts_with("3.0.") => load_openssl300_ebpf(opt_map).unwrap(),
+        // ...其他版本处理
+    };
+```
+
+版本适配：根据检测到的OpenSSL版本，加载对应的预编译eBPF程序，确保兼容性。   
+
+6. 事件处理循环 
+
+```rust
+let mut r = bpf.receiver.resubscribe();
+    let exit = tokio::signal::ctrl_c();
+    pin!(exit);
+    loop {
+        select! {
+        ev = r.recv() => { /* 处理事件 */ },
+            _ = &mut exit => { /* 处理Ctrl-C退出 */ },
+        }
+    }
+``` 
+
+异步事件循环：使用tokio::select!同时监听eBPF事件和Ctrl-C信号。  
+
+优雅退出：用户按下Ctrl-C时打印信息并返回成功状态码。    
+
+7. TLS数据解析     
+
+```rust
+match ev.version {
+        ciphers::TLS12_VERSION => {
+            info!("{}\nCR  {}\nMK  {}", ev.version.name(), hex::encode(ev.client_random), hex::encode(ev.master_key));
+        },
+        ciphers::TLS13_VERSION => {
+            info!("{} ...", ev.version.name()); // 输出更多密钥信息
+        },
+        _ => error!("unknown tls version"),
+    }
+``` 
+TLS版本处理：   
+TLS 1.2及以下：记录客户端随机数（Client Random）和主密钥（Master Key）。    
+TLS 1.3：记录握手密钥、流量密钥等更复杂的参数。 
+未知版本：记录错误日志。    
+
+**关键点总结**  
+eBPF动态探测：通过用户态与内核态协作，动态注入探针到OpenSSL关键函数（如SSL_read/SSL_write），捕获TLS握手数据。
+多版本支持：覆盖OpenSSL 1.0.2到3.4.x的多个版本，适配不同符号和内部结构。
+异步架构：利用Tokio运行时实现高效事件循环，处理高并发网络流量。
+安全清理：通过defer!确保eBPF资源释放，避免残留导致系统问题。
+密钥提取：核心功能是提取TLS连接中的关键安全参数，可用于解密流量或安全审计。
