@@ -124,3 +124,111 @@ service ScanFile {
 }
 
 ```
+
+
+## 实际使用grpc
+
+![alt text](image-1.png)    
+
+proto文件:
+```proto 
+//这是在说明我们使用的是proto3语法
+syntax = "proto3";
+
+// 这部分的内容是关于最后生成的go文件是处于哪个目录哪个包中，.代表在当前目录生成，service代表了生成的go文件的包名是service
+option go_package = ".;service";
+
+// 然后我们需要定义一个服务，在这个服务中需要有一个方法，这个方法可以接受客户端的参数，再返回服务端的响应。
+// 其实很容易可以看出，我们定义了一个service,称为SayHello,这个服务有一个rpc方法，名为SayHello.
+// 这个方法会发送一个HelloRequest,然后返回一个HelloResponse。
+service SayHello {
+    rpc SayHello(HelloRequest) returns (HelloResponse) {}
+}
+
+// message 关键字，其实你可以理解成Golang的结构体。
+// 这里比较特别的是变量后面的“赋值”。注意：这里并不是赋值，而是在定义这个变量在这个message中的位置。
+message HelloRequest {
+    string requestName = 1;
+    int64 age = 2;
+    repeated string name = 3; //在go代码中被认为是切片
+}
+
+message HelloResponse {
+    string reponseMsg = 1;
+}
+
+```
+
+服务端文件
+```golang 
+package main
+
+import (
+	"context"
+	"fmt"
+	"go/format"
+	"net"
+	pb "root/grpc_go/hello-server/proto"
+
+	"google.golang.org/grpc"
+)
+
+// hello-server
+type server struct {
+	pb.UnimplementedSayHelloServer 
+}
+
+func (s *server) SayHello(ctx context.Context, req *pb.HelloRequest) (*pb.HelloResponse, error) {
+	return &pb.HelloResponse{ResponseMsg:"hello"+req.RequestName}, nil
+}
+
+func main() {
+	// 开启端口
+	listen,_ := net.Listen("tcp", ":9090");
+	// 创建grpc服务
+	grpcServer := grpc.NewServer()
+	// 在grpc服务端中去注册我们自己编写的服务
+	pb.RegisterSayHelloServer(grpcServer, &server{})
+
+	// 启动服务
+	err := grpcServer.Serve(listen)
+	if err != nil {
+		fmt.Printf("failed to serve: %v", err)
+		return
+	}
+}
+
+```
+
+客户端文件：
+```golang 
+package main
+
+import (
+	"context"
+	"log"
+	"fmt"
+	pb "root/grpc_go/hello-server/proto"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+func main() {
+	// 连接到server端，此处禁用安全传输，没有加密和验证
+	conn, err := grpc.Dial("127.0.0.1:9090", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatal("did not connect: %v", err)
+	}
+	defer conn.Close()
+
+	// 建立连接
+	pb.NewSayHelloClient(conn)
+
+	// 执行rpc调用 (这个方法在服务器端来实现并返回结果)
+	resp, _ := client.SayHello(context.Background(), &pb.HelloRequest{RequestName: "jwz"})
+
+	fmt.Println(resp.GetResponseMsg())
+}
+
+```
